@@ -23,7 +23,7 @@ Strata 服务器 (默认 http://127.0.0.1:8080)
 ```sh
 git clone https://github.com/aifeifei798/Deepseek-Chat-Strata-Qwen3.8-Flash-Next.git
 cd Deepseek-Chat-Strata-Qwen3.8-Flash-Next
-./install.sh            # 装依赖、生成 .env、给 Strata 打兼容补丁
+./install.sh            # 装依赖、生成 .env、给 Strata 打本项目专用的兼容补丁（说明见下文）
 ./serve.sh start        # 拉起网页（.env 配了 STRATA_MODEL_PATH 时连 Strata 一起拉起）
 ```
 
@@ -53,20 +53,25 @@ cd Deepseek-Chat-Strata-Qwen3.8-Flash-Next
 | `./serve.sh logs` | 看开发服务器日志 |
 | `./serve.sh strata-start` / `strata-stop` | 单独拉起 / 停掉 Strata（停掉会释放显存） |
 
-## 关于 Strata 补丁
+## 关于 Strata 补丁（本项目专用）
 
-chat-demo 每条提问前会插入一条 `role: "latest_reminder"` 的消息（日期 / 平台 / 语言快照，DeepSeek API 的私有角色）。非 DeepSeek 模型家族的 chat template 不认识它，渲染时报 `Unexpected message role.`。
+> [!IMPORTANT]
+> **这个补丁只为本项目（chat-demo 前端）而存在**，随 `./install.sh` 打到本机的 Strata 上。它**不是 Strata 的通用补丁**：
+> - 用其他客户端（Claude Code、OpenCode、`strata connect` 列表里的应用等）连 Strata 时**不需要、也不要打**它；
+> - 换掉本前端后就与它无关；留着它对别的客户端零影响（它们从不发送 `latest_reminder`，折叠逻辑不会触发），卸载本项目也不必回滚。
 
-`install.sh` 用 [patches/patch_strata_frontend.py](patches/patch_strata_frontend.py) 在 Strata 的 `serve/frontend.py`（两条 API 路径共用的模板渲染入口）加一个兼容：模板原生支持该角色的（DeepSeek V4.1）保持原样，不认识的家族折叠成 user。补丁幂等、自动备份原文件（`frontend.py.bak-chatdemo`）、写完做语法自检；`serve.sh status` 会随时检查它还在不在。
+**为什么需要**：chat-demo 每条提问前会插入一条 `role: "latest_reminder"` 的消息（日期 / 平台 / 语言快照，DeepSeek API 的私有角色）。非 DeepSeek 模型家族的 chat template 不认识它，渲染时报 `Unexpected message role.`。只有本项目会发这种消息，所以只有本项目需要这个补丁。
 
-**注意**：`strata update` 升级 Terminal 后补丁可能被新文件覆盖，再跑一次 `./install.sh` 即可恢复。给**运行中**的 Strata 打完补丁要重启服务才生效（`strata launch --stop` 后重新启动；注意 `strata launch --restart` 只重载模型，不会重启 serve 进程重新读 Python 代码）。
+**它做什么**：`install.sh` 用 [patches/patch_strata_frontend.py](patches/patch_strata_frontend.py) 在 Strata 的 `serve/frontend.py`（两条 API 路径共用的模板渲染入口）加一个兼容：模板原生支持该角色的（DeepSeek V4.1）保持原样，不认识的家族折叠成 user。补丁幂等、自动备份原文件（`frontend.py.bak-chatdemo`）、写完做语法自检；`serve.sh status` 会随时检查它还在不在。
+
+**维护**：`strata update` 升级 Terminal 后补丁可能被新文件覆盖，再跑一次 `./install.sh` 即可恢复。给**运行中**的 Strata 打完补丁要重启服务才生效（`strata launch --stop` 后重新启动；注意 `strata launch --restart` 只重载模型，不会重启 serve 进程重新读 Python 代码）。
 
 Strata 装在非默认位置时：`./install.sh --strata-home /path/to/strata`，或直接 `STRATA_SERVE_DIR=/path/to/serve ./install.sh`。
 
 ## 与上游的差异
 
 - [rspack.config.ts](rspack.config.ts)：读 `.env`；开发服务器加同源代理（`/anthropic/*` → `/v1/*` 改写、`/models` 直转）；仅影响 `pnpm dev`，`pnpm build` 产物仍指向 `https://api.deepseek.com`（除非 `.env` 设置了 `API_ORIGIN`）
-- 新增 [.env.example](.env.example)、[install.sh](install.sh)、[serve.sh](serve.sh)、[patches/](patches/)
+- 新增 [.env.example](.env.example)、[install.sh](install.sh)、[serve.sh](serve.sh)、[patches/](patches/)（`patches/` 里的补丁只服务于本前端，见[上文](#关于-strata-补丁本项目专用)）
 - 其余代码与上游 v0.1.1 一致；应用自身的功能说明见 [上游 README](https://github.com/deepseek-ai/chat-demo#readme)
 
 ## 开发

@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """给 Strata 的 serve/frontend.py 打 chat-demo 兼容补丁（latest_reminder 角色）。
 
+适用范围：只服务于本仓库（chat-demo 前端）。latest_reminder 是本前端特有的
+请求内容，其他客户端连 Strata 不需要、也不要打这个补丁；它对已安装它的
+Strata 上的其他客户端零影响（它们不发该角色，折叠逻辑不会触发）。
+
 背景：DeepSeek 系客户端（本仓库的 chat-demo）会在每条提问前插入一条
 role='latest_reminder' 的消息；模型家族不是 DeepSeek 时（如 Qwen3.8-Flash-Next），
 其 chat template 不认识这个角色，渲染时抛 'Unexpected message role.'。
