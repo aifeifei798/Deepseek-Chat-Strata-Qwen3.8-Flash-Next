@@ -1,5 +1,6 @@
 import clsx from 'clsx'
-import { memo, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   IconGlobeLanguageOutline14,
   IconPaperclipOutline16,
@@ -7,7 +8,13 @@ import {
   IconStopFill16,
   IconThinkOutline14,
 } from '../base/icons.js'
-import { setSearch, setThinking, useSettings } from '../../services/settings.js'
+import {
+  setSearch,
+  setThinking,
+  setThinkingLevel,
+  useSettings,
+  type ThinkingLevel,
+} from '../../services/settings.js'
 import { useIsMobile } from '../../app/viewport.js'
 import { sendMessage, stopReply, useChatStore } from '../../services/chat/store.js'
 import {
@@ -34,6 +41,9 @@ import { Spectrum } from './Spectrum.js'
 import { useTranslate } from '../../i18n/index.js'
 import styles from './ChatInput.module.css'
 
+/** 深度思考的三挡，即 Qwen3.8 模板 reasoning_effort 的原生取值 */
+const THINKING_LEVELS = ['low', 'medium', 'xhigh'] as const
+
 /** 输入框：自适应高度的文本框 + 文件 + 深度思考与智能搜索开关 + 语音输入 + 发送 / 停止 */
 export const ChatInput = memo(function ChatInput({ sessionId }: { sessionId: string | null }) {
   // 切换目标时释放录音、转写和 DOM 状态；文字与附件由草稿服务保留。
@@ -50,7 +60,57 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
     (state) => sessionId !== null && Object.hasOwn(state.streaming, sessionId)
   )
   const thinking = useSettings((state) => state.thinking)
+  const thinkingLevel = useSettings((state) => state.thinkingLevel)
+  const [thinkingMenuOpen, setThinkingMenuOpen] = useState(false)
+  const [thinkingMenuPos, setThinkingMenuPos] = useState<{ left: number; bottom: number } | null>(
+    null
+  )
+  const thinkingWrapRef = useRef<HTMLDivElement>(null)
+  const thinkingMenuRef = useRef<HTMLDivElement>(null)
   const importingHistory = useChatStore((state) => state.importingHistory)
+
+  const openThinkingMenu = () => {
+    const rect = thinkingWrapRef.current?.getBoundingClientRect()
+    setThinkingMenuPos(rect ? { left: rect.left, bottom: window.innerHeight - rect.top + 6 } : null)
+    setThinkingMenuOpen(true)
+  }
+
+  const selectThinking = (on: boolean, level: ThinkingLevel | undefined) => {
+    setThinking(on)
+    if (level) {
+      setThinkingLevel(level)
+    }
+    setThinkingMenuOpen(false)
+  }
+
+  // 菜单开着时：点外面或按 Esc 关闭
+  useEffect(() => {
+    if (!thinkingMenuOpen) {
+      return
+    }
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target as Node
+      // portal 出去的菜单在 wrapRef 之外：点菜单项不关闭，等 click 里的选择逻辑来关
+      if (
+        !thinkingWrapRef.current?.contains(target) &&
+        !thinkingMenuRef.current?.contains(target)
+      ) {
+        setThinkingMenuOpen(false)
+      }
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setThinkingMenuOpen(false)
+      }
+    }
+    document.addEventListener('pointerdown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('pointerdown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [thinkingMenuOpen])
+
   const isMobile = useIsMobile()
   const search = useSettings((state) => state.search)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -203,18 +263,67 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
       <div className={styles.functionRow}>
         {/* 深度思考 / 智能搜索开关，tooltip 在按钮上方 */}
         <div ref={togglesRef} className={styles.toggles}>
-          <Tooltip content={t('deactivatedThinkTooltip')}>
+          <div ref={thinkingWrapRef} className={styles.toggleWrap}>
             <button
               type="button"
               className={clsx(styles.toggle, thinking && styles.selected)}
               aria-label={t('thinkingSwitch')}
               aria-pressed={thinking}
-              onClick={() => setThinking(!thinking)}
+              aria-haspopup="menu"
+              aria-expanded={thinkingMenuOpen}
+              onClick={openThinkingMenu}
             >
               <IconThinkOutline14 />
-              <span className={styles.toggleLabel}>{t('thinkingSwitch')}</span>
+              <span className={styles.toggleLabel}>
+                {thinking ? `${t('thinkingSwitch')} · ${thinkingLevel}` : t('thinkingSwitch')}
+              </span>
             </button>
-          </Tooltip>
+            {thinkingMenuOpen && thinkingMenuPos
+              ? createPortal(
+                  <div
+                    ref={thinkingMenuRef}
+                    className={styles.thinkingMenu}
+                    style={{
+                      position: 'fixed',
+                      left: thinkingMenuPos.left,
+                      bottom: thinkingMenuPos.bottom,
+                      zIndex: 30,
+                    }}
+                    role="menu"
+                    aria-label={t('thinkingSwitch')}
+                  >
+                    <button
+                      type="button"
+                      role="menuitemradio"
+                      aria-checked={!thinking}
+                      className={clsx(
+                        styles.thinkingMenuItem,
+                        !thinking && styles.thinkingMenuItemActive
+                      )}
+                      onClick={() => selectThinking(false, undefined)}
+                    >
+                      {t('thinkingOff')}
+                    </button>
+                    {THINKING_LEVELS.map((level) => (
+                      <button
+                        key={level}
+                        type="button"
+                        role="menuitemradio"
+                        aria-checked={thinking && thinkingLevel === level}
+                        className={clsx(
+                          styles.thinkingMenuItem,
+                          thinking && thinkingLevel === level && styles.thinkingMenuItemActive
+                        )}
+                        onClick={() => selectThinking(true, level)}
+                      >
+                        {level}
+                      </button>
+                    ))}
+                  </div>,
+                  document.body
+                )
+              : null}
+          </div>
           <Tooltip content={t('deactivatedSearchTooltip')}>
             <button
               type="button"

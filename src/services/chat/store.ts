@@ -255,13 +255,14 @@ export const bindChatPersistence = () => {
 
 /** 按当前开关创建回复：深度思考对应 thinking，智能搜索控制 deepseek_web_search。 */
 const createReply = (): AssistantMessage => {
-  const { thinking, search } = useSettings.getState()
+  const { thinking, thinkingLevel, search } = useSettings.getState()
   return {
     id: createId(),
     role: 'assistant',
     createdAt: Date.now(),
     model: MODEL,
     thinking,
+    thinkingLevel,
     search,
     prefix: true,
     status: 'pending',
@@ -705,12 +706,13 @@ export const continueReply = (sessionId: string, messageId: string) => {
   ) {
     return
   }
-  const { thinking, search } = useSettings.getState()
+  const { thinking, thinkingLevel, search } = useSettings.getState()
   const reply: AssistantMessage = {
     ...previous,
     // 未记录请求配置的回复，续写时使用默认模型和当前开关。
     model: previous.model ?? MODEL,
     thinking: previous.thinking ?? thinking,
+    thinkingLevel: previous.thinkingLevel ?? thinkingLevel,
     search: previous.search ?? search,
     status: 'pending',
     stopReason: undefined,
@@ -1003,6 +1005,9 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             system: SYSTEM_PROMPT,
             messages,
             thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
+            ...(initial.thinking
+              ? { output_config: { effort: initial.thinkingLevel ?? useSettings.getState().thinkingLevel } }
+              : {}),
             safety_check: SAFETY_CHECK,
             tools: serverTools(initial.search ?? false),
             ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),

@@ -141,6 +141,7 @@ export const en = {
   chatInputPlaceholderChat: 'Enter a message',
   deactivatedThinkTooltip: 'Think before responding to solve reasoning problems',
   thinkingSwitch: 'DeepThink',
+  thinkingOff: 'Off',
   deactivatedSearchTooltip: 'Search the web when necessary',
   search: 'Search',
   uploadFile: 'Upload files',

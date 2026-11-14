@@ -335,3 +335,41 @@
     cursor: not-allowed;
   }
 }
+
+/* 深度思考档位菜单：portal 到 body，fixed 定位贴在开关上方 */
+.thinkingMenu {
+  min-width: 150px;
+  padding: 4px;
+  border-radius: 12px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: var(--dsw-specific-menu);
+  box-shadow: var(--dsw-shadow-lv3);
+}
+
+.thinkingMenuItem {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+
+  &:hover {
+    background-color: var(--dsw-alias-interactive-bg-hover);
+  }
+}
+
+.thinkingMenuItemActive {
+  color: var(--dsw-alias-brand-text);
+  font-weight: 600;
+}

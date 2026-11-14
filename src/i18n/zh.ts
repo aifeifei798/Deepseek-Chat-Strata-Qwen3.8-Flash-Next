@@ -133,6 +133,7 @@ export const zh = {
   chatInputPlaceholderChat: '请输入消息',
   deactivatedThinkTooltip: '先思考后回答，解决推理问题',
   thinkingSwitch: '深度思考',
+  thinkingOff: '关闭',
   deactivatedSearchTooltip: '按需搜索网页',
   search: '智能搜索',
   uploadFile: '上传文件',

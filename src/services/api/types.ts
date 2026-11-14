@@ -177,6 +177,8 @@ export type CreateMessageRequest = {
   system: string
   messages: MessageParam[]
   thinking: { type: 'enabled' | 'disabled' }
+  /** 深度思考开启时的思考力度；Strata 把它映射到模板的 reasoning_effort（low / medium / xhigh） */
+  output_config?: { effort: 'low' | 'medium' | 'xhigh' }
   tools: (DeepseekWebSearchTool | DeepseekReadUrlTool)[]
   safety_check: { level: 'high' }
   title?: { enabled: boolean }

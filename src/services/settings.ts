@@ -7,6 +7,9 @@ export type Locale = 'zh-CN' | 'en-US'
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
+/** 深度思考的思考力度；Qwen3.8 模板的原生三挡，默认 xhigh */
+export type ThinkingLevel = 'low' | 'medium' | 'xhigh'
+
 /** 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、深度思考与智能搜索开关、侧边栏收起状态 */
 type Settings = {
   apiKey: string | null
@@ -15,6 +18,7 @@ type Settings = {
   location: UserLocation | null
   ttsVoice: TtsVoice
   thinking: boolean
+  thinkingLevel: ThinkingLevel
   search: boolean
   siderCollapsed: boolean
 }
@@ -26,6 +30,7 @@ const KEYS = {
   themePreference: 'chat-demo:theme-preference',
   ttsVoice: 'chat-demo:tts-voice',
   thinking: 'chat-demo:thinking',
+  thinkingLevel: 'chat-demo:thinking-level',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -87,13 +92,28 @@ const initialThemePreference = (): ThemePreference => {
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
+/** 档位功能上线前没有 thinking-level 键：老状态不继承，默认 xhigh 开启；之后以存储为准 */
+const initialThinkingLevel = (): ThinkingLevel => {
+  const saved = read(KEYS.thinkingLevel)
+  return saved === 'low' || saved === 'medium' || saved === 'xhigh' ? saved : 'xhigh'
+}
+
+const initialThinking = (): boolean => {
+  if (read(KEYS.thinkingLevel) === null) {
+    return true
+  }
+  const saved = read(KEYS.thinking)
+  return saved === null ? true : saved === 'true'
+}
+
 export const useSettings = create<Settings>(() => ({
   apiKey: read(KEYS.apiKey),
   locale: initialLocale(),
   location: initialLocation(),
   themePreference: initialThemePreference(),
   ttsVoice: initialTtsVoice(),
-  thinking: read(KEYS.thinking) === 'true',
+  thinking: initialThinking(),
+  thinkingLevel: initialThinkingLevel(),
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
@@ -127,6 +147,11 @@ export const setApiKey = (apiKey: string | null) => {
 export const setThinking = (thinking: boolean) => {
   write(KEYS.thinking, String(thinking))
   useSettings.setState({ thinking })
+}
+
+export const setThinkingLevel = (thinkingLevel: ThinkingLevel) => {
+  write(KEYS.thinkingLevel, thinkingLevel)
+  useSettings.setState({ thinkingLevel })
 }
 
 export const setSearch = (search: boolean) => {
