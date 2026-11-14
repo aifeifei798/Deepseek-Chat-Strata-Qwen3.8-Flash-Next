@@ -46,6 +46,13 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .waitingDot {
+    animation: none;
+    opacity: 0.6;
+  }
+}
+
 .notice {
   display: flex;
   align-items: flex-start;

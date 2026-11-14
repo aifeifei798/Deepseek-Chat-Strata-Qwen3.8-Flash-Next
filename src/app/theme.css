@@ -41,6 +41,7 @@ body {
   --dsw-static-blue-600: rgb(72, 104, 178);
   --dsw-static-blue-800: rgb(52, 65, 91);
   --dsw-static-blue-900: rgb(40, 49, 66);
+  --dsw-static-cyan-400: rgb(156, 229, 237);
   --dsw-static-green-100: rgb(230, 250, 237);
   --dsw-static-green-400: rgb(78, 209, 126);
   --dsw-static-green-500: rgb(34, 197, 94);
@@ -86,6 +87,7 @@ body[data-ds-dark-theme] {
   --dsw-static-blue-600: rgb(72, 104, 178);
   --dsw-static-blue-800: rgb(52, 65, 91);
   --dsw-static-blue-900: rgb(40, 49, 66);
+  --dsw-static-cyan-400: rgb(156, 229, 237);
   --dsw-static-green-100: rgb(230, 250, 237);
   --dsw-static-green-400: rgb(78, 209, 126);
   --dsw-static-green-500: rgb(34, 197, 94);
@@ -164,6 +166,7 @@ body {
   --dsw-specific-sidebar-fill: var(--dsw-static-neutral-bluish-50);
   --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-blue-100);
   --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-75);
+  --dsw-alias-drag-mask-fill: rgba(255, 255, 255, 0.7);
 }
 
 body[data-ds-dark-theme] {
@@ -215,11 +218,27 @@ body[data-ds-dark-theme] {
   --dsw-specific-sidebar-fill: var(--dsw-static-neutral-bluish-900);
   --dsw-specific-sidebar-nav-item-active-accent: var(--dsw-static-neutral-bluish-800);
   --dsw-specific-sidebar-nav-item-hover: var(--dsw-static-neutral-bluish-850);
+  --dsw-alias-drag-mask-fill: rgba(39, 39, 48, 0.7);
 }
 
 body {
   --dsw-shadow-lv3:
     0 0 1px 0 rgba(0, 0, 0, 0.2), 0 0 4px 0 rgba(0, 0, 0, 0.02), 0 12px 32px 0 rgba(0, 0, 0, 0.08);
+}
+
+/* 聊天输入框的阴影与媒体缩略图上的遮罩：叠在内容之上，不随主题反转（同 --dsw-shadow-lv3） */
+body {
+  --dsw-shadow-input-session: 0 4px 10px rgba(0, 0, 0, 0.02), 0 2px 4px rgba(0, 0, 0, 0.04);
+  --dsw-shadow-input-home:
+    0 4px 12px 0 rgba(0, 0, 0, 0.02), 0 2px 2px 0 rgba(72, 104, 178, 0.01),
+    0 30px 60px 0 rgba(72, 104, 178, 0.03);
+  --dsw-shadow-hairline: 0 0 0.5px rgba(0, 0, 0, 0.2);
+  --dsw-alias-media-scrim: rgba(0, 0, 0, 0.3);
+  --dsw-alias-media-scrim-dim: rgba(0, 0, 0, 0.24);
+  --dsw-alias-media-scrim-strong: rgba(0, 0, 0, 0.4);
+  --dsw-alias-media-scrim-heavy: rgba(0, 0, 0, 0.5);
+  --dsw-alias-media-scrim-fade: linear-gradient(to bottom, rgba(0, 0, 0, 0), rgba(0, 0, 0, 0.65));
+  --dsw-alias-media-spinner-ring: rgba(255, 255, 255, 0.4);
 }
 
 body {

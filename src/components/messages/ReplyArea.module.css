@@ -204,6 +204,14 @@
   }
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .shimmer,
+  .dotInner,
+  .query {
+    animation: none;
+  }
+}
+
 .tool {
   position: relative;
   display: flex;

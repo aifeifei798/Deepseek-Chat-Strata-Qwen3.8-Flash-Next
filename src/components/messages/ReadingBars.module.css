@@ -13,7 +13,7 @@
 }
 
 .sweep {
-  fill: #000;
+  fill: var(--dsw-static-neutral-bluish-1000);
   fill-opacity: 0;
   animation-duration: 1.5s;
   animation-timing-function: linear;

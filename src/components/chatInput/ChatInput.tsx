@@ -167,6 +167,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
           ref={textareaRef}
           className={clsx(styles.textarea, recording && isMobile && styles.textareaHidden)}
           placeholder={t('chatInputPlaceholderChat')}
+          aria-label={t('chatInputPlaceholderChat')}
           rows={2}
           // 移动端不自动聚焦，避免一打开就弹出键盘
           autoFocus={!isMobile}
@@ -254,6 +255,7 @@ const Input = ({ sessionId }: { sessionId: string | null }) => {
             type="file"
             multiple
             hidden
+            aria-label={t('uploadFile')}
             accept={ACCEPT}
             onChange={(event) => {
               acceptFiles(Array.from(event.target.files ?? []))
