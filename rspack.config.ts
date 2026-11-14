@@ -21,9 +21,13 @@ const loadEnvFile = (): Record<string, string> => {
   const out: Record<string, string> = {}
   try {
     for (const line of readFileSync(new URL('./.env', import.meta.url), 'utf8').split('\n')) {
-      if (line.trim().startsWith('#')) continue
+      if (line.trim().startsWith('#')) {
+        continue
+      }
       const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/)
-      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '')
+      if (m) {
+        out[m[1]] = m[2].replace(/^["']|["']$/g, '')
+      }
     }
   } catch {
     // 没有 .env：全部走默认值
@@ -114,6 +118,7 @@ export const createConfig = ({
 // 本地接 Strata：API 地址默认留空走同源，开发服务器把 /anthropic/* 改写到 Strata 的 /v1/*，
 // /models 原样转发；Strata 地址与端口从 .env 读取（见 .env.example）。
 // 只影响 `pnpm dev`；`pnpm build` 仍指向 https://api.deepseek.com，除非 .env 里显式设置 API_ORIGIN。
+// eslint-disable-next-line import/no-default-export
 export default defineConfig(
   createConfig({
     apiOrigin: env.API_ORIGIN ?? (dev ? '' : 'https://api.deepseek.com'),
