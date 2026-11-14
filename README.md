@@ -1,75 +1,92 @@
-# chat-demo
+# Deepseek-Chat-Strata-Qwen3.8-Flash-Next
 
-English | [简体中文](README.zh-CN.md)
+[English](https://github.com/deepseek-ai/chat-demo) | 简体中文
 
-A static chat demo powered by the DeepSeek API. No application backend is required: the browser connects directly to the configured API service.
+基于 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo)（MIT）的定制版：把这款浏览器聊天前端接到**本地 Strata 服务器**上（Qwen3.8-Flash-Next 等 `qwen4exp` 模型），走 Anthropic 兼容接口。无应用后端，浏览器直连；开发服务器代理转发，**不需要任何 CORS 配置**，Strata 侧零改动（只打一个可选的角色兼容补丁，见下文）。
 
-You can [try the app online](https://deepseek-ai.github.io/chat-demo/) or download the archive from [Releases](https://github.com/deepseek-ai/deepseek-chat-demo/releases), extract it, and double-click `index.html` to use it locally without installation or a build. Enter your API key in Settings before your first chat.
+```
+浏览器 (localhost:8091)
+   │  同源请求，无 CORS 问题
+   ▼
+rspack dev-server  ←  /anthropic/* 改写为 /v1/*，/models 原样转发
+   ▼
+Strata 服务器 (默认 http://127.0.0.1:8080)
+   └─ Qwen3.8-Flash-Next（UD-IQ3_XXS，Anthropic 兼容 API，支持图片与思考）
+```
 
-## Getting started
+功能与上游一致：多会话、流式回答、深度思考（思考内容走 Anthropic thinking 块）、Markdown / KaTeX / Mermaid、历史导入导出等。深度思考开关、`system`、`max_tokens` 都被 Strata 正确执行；上游的 `title`、`safety_check` 等私有字段被 Strata 静默忽略。
 
-Install Node.js 22.12+ and pnpm, then run:
+## 快速开始
+
+前提：一台跑着 [Strata](https://github.com/Niko1221/Strata) 的机器（装好 Terminal 和模型，`strata launch` 能出地址），Node.js 22.12+，python3（打补丁用）。
 
 ```sh
-git clone https://github.com/deepseek-ai/chat-demo.git
-cd chat-demo
-pnpm install
-pnpm dev
+git clone https://github.com/aifeifei798/Deepseek-Chat-Strata-Qwen3.8-Flash-Next.git
+cd Deepseek-Chat-Strata-Qwen3.8-Flash-Next
+./install.sh            # 装依赖、生成 .env、给 Strata 打兼容补丁
+./serve.sh start        # 拉起网页（.env 配了 STRATA_MODEL_PATH 时连 Strata 一起拉起）
 ```
 
-Open http://localhost:8090.
+打开 **http://localhost:8091**，设置里 **API Key 随便填**（本地服务不校验），开始聊天。
 
-To build the static site:
+## .env 配置
 
-```sh
-pnpm build
-```
+`./install.sh` 会从 [.env.example](.env.example) 生成 `.env`（不入库），改完重启 `./serve.sh` 生效；环境变量优先于文件：
 
-The output is written to `dist/`. Deploy it to a static web server or open `dist/index.html` directly. Opening the file directly requires browser support for storage on `file://` pages and an API service that permits their cross-origin requests.
+| 变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `STRATA_URL` | `http://127.0.0.1:8080` | Strata 服务地址，代理后端 + serve.sh 探测用 |
+| `DEV_PORT` | `8091` | 网页开发服务器端口（8090 是上游默认值，常被占用） |
+| `API_ORIGIN` | 空 | 留空走同源代理（推荐）；显式设置会同时影响 `pnpm build` 产物 |
+| `STRATA_BIN` | `~/.local/bin/strata` | Strata 可执行文件路径 |
+| `STRATA_MODEL_PATH` | 空 | 模型分片路径（任一分片）；设置后 `./serve.sh start` 自动拉起 Strata |
+| `STRATA_LAUNCH_ARGS` | 空 | 传给 `strata launch` 的额外参数，含空格要加引号 |
 
-## Features
+## 管理命令（serve.sh）
 
-- Multiple conversations with automatic titles, renaming, and deletion; edit prompts, regenerate replies, and switch between message branches.
-- Streaming replies, deep thinking, smart search, link reading, and source citations; stop generation or continue eligible replies.
-- Upload, paste, or drag and drop attachments; use voice input and read replies aloud. A live audio spectrum appears in the first row of the input area while recording on mobile.
-- Markdown, syntax highlighting, KaTeX math, and Mermaid diagrams.
-- Simplified Chinese and English, light and dark themes, mobile layouts, location settings, and chat history import and export.
+| 命令 | 作用 |
+| --- | --- |
+| `./serve.sh start` | 起服务：Strata（按需）+ 网页开发服务器 |
+| `./serve.sh stop` | 停网页开发服务器（不动 Strata） |
+| `./serve.sh restart` | 重启网页开发服务器 |
+| `./serve.sh status` | 两个服务的状态 + 补丁状态 |
+| `./serve.sh logs` | 看开发服务器日志 |
+| `./serve.sh strata-start` / `strata-stop` | 单独拉起 / 停掉 Strata（停掉会释放显存） |
 
-## Data and storage
+## 关于 Strata 补丁
 
-Your API key and settings are stored in the browser's localStorage. Conversations and original attachments are stored in IndexedDB. Local data is isolated by browser profile and site origin. Sending messages, uploading attachments, and using speech features sends the relevant content to the configured API service.
+chat-demo 每条提问前会插入一条 `role: "latest_reminder"` 的消息（日期 / 平台 / 语言快照，DeepSeek API 的私有角色）。非 DeepSeek 模型家族的 chat template 不认识它，渲染时报 `Unexpected message role.`。
 
-History import and export in Settings use ZIP archives. After confirmation and successful validation, importing replaces all local conversations and attachments. Exports include conversations and locally available original images, but exclude API keys, settings, and original non-image attachments. See the [history import/export documentation (Chinese)](src/services/chat/history/README.md) for the archive format and preservation details.
+`install.sh` 用 [patches/patch_strata_frontend.py](patches/patch_strata_frontend.py) 在 Strata 的 `serve/frontend.py`（两条 API 路径共用的模板渲染入口）加一个兼容：模板原生支持该角色的（DeepSeek V4.1）保持原样，不认识的家族折叠成 user。补丁幂等、自动备份原文件（`frontend.py.bak-chatdemo`）、写完做语法自检；`serve.sh status` 会随时检查它还在不在。
 
-Settings → Data → Delete all chats clears all local conversations, original attachments, and unsent drafts after confirmation. It stops ongoing replies and returns to a new chat. Your API key and settings are preserved; files already uploaded to the API service are not deleted.
+**注意**：`strata update` 升级 Terminal 后补丁可能被新文件覆盖，再跑一次 `./install.sh` 即可恢复。给**运行中**的 Strata 打完补丁要重启服务才生效（`strata launch --stop` 后重新启动；注意 `strata launch --restart` 只重载模型，不会重启 serve 进程重新读 Python 代码）。
 
-## Development
+Strata 装在非默认位置时：`./install.sh --strata-home /path/to/strata`，或直接 `STRATA_SERVE_DIR=/path/to/serve ./install.sh`。
 
-| Command       | Description                  |
-| ------------- | ---------------------------- |
-| `pnpm dev`    | Start the development server |
-| `pnpm build`  | Build into `dist/`           |
-| `pnpm type`   | Run TypeScript type checks   |
-| `pnpm lint`   | Lint with oxlint             |
-| `pnpm format` | Format with oxfmt            |
+## 与上游的差异
 
-[rspack.config.ts](rspack.config.ts) uses `https://api.deepseek.com` by default. Use `createConfig({ apiOrigin, devServer })` to customize the API origin and development server proxy.
+- [rspack.config.ts](rspack.config.ts)：读 `.env`；开发服务器加同源代理（`/anthropic/*` → `/v1/*` 改写、`/models` 直转）；仅影响 `pnpm dev`，`pnpm build` 产物仍指向 `https://api.deepseek.com`（除非 `.env` 设置了 `API_ORIGIN`）
+- 新增 [.env.example](.env.example)、[install.sh](install.sh)、[serve.sh](serve.sh)、[patches/](patches/)
+- 其余代码与上游 v0.1.1 一致；应用自身的功能说明见 [上游 README](https://github.com/deepseek-ai/chat-demo#readme)
 
-Chat uses `deepseek-flash` by default through Anthropic-compatible Messages / Files APIs. Speech features use ASR / TTS endpoints. Requests include extensions for search, link reading, titles, and `latest_reminder`, so the configured service must support the corresponding capabilities. Supported attachment formats are determined by server-side validation.
+## 开发
 
-```text
-src/
-  app/                 Application layout, themes, and global styles
-  components/          Chat, settings, Markdown, and other UI components
-  i18n/                English and Chinese translations
-  services/
-    api/               API requests, SSE, and protocol types
-    chat/              Conversations, message branches, storage, and history import/export
-    markdown/          Markdown parsing, syntax highlighting, and diagrams
-    speech/            Audio recording and read-aloud playback
-  utils/               Shared utilities
-```
+| 命令 | 用途 |
+| --- | --- |
+| `pnpm dev` | 开发服务器（同 `./serve.sh start` 的网页部分，前台运行） |
+| `pnpm build` | 构建到 `dist/`（产物指向 api.deepseek.com，除非 `.env` 设置 `API_ORIGIN`） |
+| `pnpm type` | TypeScript 类型检查 |
+| `pnpm lint` | oxlint 检查 |
+| `pnpm format` | oxfmt 格式化 |
+
+历史导入导出的格式见 [src/services/chat/history/README.md](src/services/chat/history/README.md)。
+
+## 已知限制
+
+- **附件上传不可用**：chat-demo 走 Anthropic Files API（`/v1/files`），Strata 没有这个端点；语音输入是浏览器本机功能，可用
+- **智能搜索 / 链接阅读**是 DeepSeek 云端能力，接本地模型没有意义（开关会被 Strata 忽略）
+- API Key 仅作占位：本地 Strata 默认不校验；若你的 Strata 用 `--access lan` 等开了 key 的模式，把真 key 填进去即可
 
 ## License
 
-[MIT](LICENSE). The build copies the license to `dist/LICENSE`; include it when distributing the app. Third-party dependencies are subject to their own licenses.
+[MIT](LICENSE)（继承上游）。模型与推理服务请遵循 Strata 和所用模型自身的许可。

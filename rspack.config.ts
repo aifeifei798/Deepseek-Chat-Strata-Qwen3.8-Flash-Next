@@ -16,6 +16,28 @@ const cssLoader = {
   options: { targets },
 }
 
+/** 读取仓库根目录的 .env（KEY=VALUE，# 注释，值可带引号）；没有 .env 时返回空对象。 */
+const loadEnvFile = (): Record<string, string> => {
+  const out: Record<string, string> = {}
+  try {
+    for (const line of readFileSync(new URL('./.env', import.meta.url), 'utf8').split('\n')) {
+      if (line.trim().startsWith('#')) continue
+      const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/)
+      if (m) out[m[1]] = m[2].replace(/^["']|["']$/g, '')
+    }
+  } catch {
+    // 没有 .env：全部走默认值
+  }
+  return out
+}
+// 环境变量优先于 .env 文件
+const env = { ...loadEnvFile(), ...process.env } as Record<string, string>
+
+/** Strata 服务地址，开发代理与 serve.sh 共用（见 .env.example） */
+const strataUrl = (env.STRATA_URL ?? 'http://127.0.0.1:8080').replace(/\/+$/, '')
+/** 开发服务器端口 */
+const devPort = Number(env.DEV_PORT ?? 8091)
+
 type ConfigOptions = {
   /** 公开 API 的地址，注入为 __API_ORIGIN__ */
   apiOrigin?: string
@@ -89,25 +111,24 @@ export const createConfig = ({
   devServer: { port: 8090, ...devServer },
 })
 
-// 本地接 Strata（http://127.0.0.1:8080）：API 地址留空走同源，
-// 开发服务器把 /anthropic/* 改写到 Strata 的 /v1/*，/models 原样转发。
-// 端口用 8091：默认的 8090 被 FastMusic 的开发服务器占用。
-// 只影响 `pnpm dev`；`pnpm build` 的产物仍指向默认的 apiOrigin。
+// 本地接 Strata：API 地址默认留空走同源，开发服务器把 /anthropic/* 改写到 Strata 的 /v1/*，
+// /models 原样转发；Strata 地址与端口从 .env 读取（见 .env.example）。
+// 只影响 `pnpm dev`；`pnpm build` 仍指向 https://api.deepseek.com，除非 .env 里显式设置 API_ORIGIN。
 export default defineConfig(
   createConfig({
-    apiOrigin: '',
+    apiOrigin: env.API_ORIGIN ?? (dev ? '' : 'https://api.deepseek.com'),
     devServer: {
-      port: 8091,
+      port: Number.isFinite(devPort) && devPort > 0 ? devPort : 8091,
       proxy: [
         {
           context: '/anthropic',
-          target: 'http://127.0.0.1:8080',
+          target: strataUrl,
           changeOrigin: true,
           pathRewrite: { '^/anthropic': '' },
         },
         {
           context: '/models',
-          target: 'http://127.0.0.1:8080',
+          target: strataUrl,
           changeOrigin: true,
         },
       ],
