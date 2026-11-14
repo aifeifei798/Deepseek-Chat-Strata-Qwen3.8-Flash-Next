@@ -89,5 +89,28 @@ export const createConfig = ({
   devServer: { port: 8090, ...devServer },
 })
 
-// eslint-disable-next-line import/no-default-export
-export default defineConfig(createConfig())
+// 本地接 Strata（http://127.0.0.1:8080）：API 地址留空走同源，
+// 开发服务器把 /anthropic/* 改写到 Strata 的 /v1/*，/models 原样转发。
+// 端口用 8091：默认的 8090 被 FastMusic 的开发服务器占用。
+// 只影响 `pnpm dev`；`pnpm build` 的产物仍指向默认的 apiOrigin。
+export default defineConfig(
+  createConfig({
+    apiOrigin: '',
+    devServer: {
+      port: 8091,
+      proxy: [
+        {
+          context: '/anthropic',
+          target: 'http://127.0.0.1:8080',
+          changeOrigin: true,
+          pathRewrite: { '^/anthropic': '' },
+        },
+        {
+          context: '/models',
+          target: 'http://127.0.0.1:8080',
+          changeOrigin: true,
+        },
+      ],
+    },
+  }),
+)
