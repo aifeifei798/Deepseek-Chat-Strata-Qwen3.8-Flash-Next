@@ -29,6 +29,8 @@ cd Deepseek-Chat-Strata-Qwen3.8-Flash-Next
 
 打开 **http://localhost:8091**，设置里 **API Key 随便填**（本地服务不校验），开始聊天。
 
+设置 → 数据管理 → **Strata 地址** 可以运行时切换目标 Strata（含局域网机器的地址和端口），填了就带上转发、清空回到 `.env` 的 `STRATA_URL`，改完立即生效、无需重启。
+
 ## .env 配置
 
 `./install.sh` 会从 [.env.example](.env.example) 生成 `.env`（不入库），改完重启 `./serve.sh` 生效；环境变量优先于文件：

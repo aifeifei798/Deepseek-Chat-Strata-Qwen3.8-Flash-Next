@@ -127,16 +127,19 @@ export default defineConfig(
       proxy: [
         {
           context: '/anthropic',
+          // 请求带 x-strata-url 头（设置里的 Strata 地址）时按头转发，否则用 .env 的 STRATA_URL
           target: strataUrl,
+          router: (req) => (req.headers['x-strata-url'] as string | undefined) || strataUrl,
           changeOrigin: true,
           pathRewrite: { '^/anthropic': '' },
         },
         {
           context: '/models',
           target: strataUrl,
+          router: (req) => (req.headers['x-strata-url'] as string | undefined) || strataUrl,
           changeOrigin: true,
         },
       ],
     },
-  }),
+  })
 )

@@ -440,3 +440,26 @@
     max-width: 100%;
   }
 }
+
+/* Strata 地址：整行输入框，说明文字在标签下方 */
+.strataUrl {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.strataUrlInput {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--dsw-alias-label-primary);
+  background-color: var(--dsw-specific-login-input);
+
+  &::placeholder {
+    color: var(--dsw-alias-label-caption);
+  }
+}

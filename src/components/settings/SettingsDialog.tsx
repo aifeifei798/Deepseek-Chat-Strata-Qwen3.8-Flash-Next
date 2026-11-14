@@ -22,6 +22,7 @@ import {
   isChineseBrowser,
   setLocale,
   setLocation,
+  setStrataUrl,
   setThemePreference,
   setTtsVoice,
   useSettings,
@@ -103,6 +104,7 @@ const SettingsContent = () => {
             </>
           ) : (
             <>
+              <StrataUrlField />
               <ApiKeyField editor={apiKeyEditor} />
               <ImportHistory historyImport={historyImport} disabled={historyBusy} />
               <ExportHistory disabled={historyBusy} />
@@ -129,6 +131,50 @@ const SettingsContent = () => {
       {historyImport.file ? <ImportConfirm historyImport={historyImport} /> : null}
       {historyDelete.opened ? <DeleteAllConfirm historyDelete={historyDelete} /> : null}
     </>
+  )
+}
+
+/**
+ * Strata 服务地址：留空走开发服务器代理（.env 的 STRATA_URL），填写后请求带 x-strata-url 头由代理转发到该地址。
+ * 浏览器始终同源，不需要给 Strata 配 CORS；失焦或回车即保存，立即生效。
+ */
+const StrataUrlField = () => {
+  const t = useTranslate()
+  const strataUrl = useSettings((state) => state.strataUrl)
+  const [value, setValue] = useState(strataUrl)
+
+  const save = () => {
+    const normalized = value.trim().replace(/\/+$/, '')
+    if (normalized !== strataUrl) {
+      setStrataUrl(normalized)
+      showToast({ key: 'strataUrlSaved' })
+    }
+  }
+
+  return (
+    <div className={clsx(styles.cell, styles.row, styles.strataUrl)}>
+      <div className={styles.text}>
+        <div className={styles.label}>{t('strataUrlLabel')}</div>
+        <div className={styles.description}>{t('strataUrlHint')}</div>
+      </div>
+      <input
+        type="text"
+        className={styles.strataUrlInput}
+        placeholder={t('strataUrlPlaceholder')}
+        autoComplete="off"
+        spellCheck={false}
+        value={value}
+        aria-label={t('strataUrlLabel')}
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={save}
+        onKeyDown={(event) => {
+          if (event.key === 'Enter') {
+            save()
+            event.currentTarget.blur()
+          }
+        }}
+      />
+    </div>
   )
 }
 

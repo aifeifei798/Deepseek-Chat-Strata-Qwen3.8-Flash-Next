@@ -1,4 +1,5 @@
 import { translate, type TranslationMessage } from '../../i18n/index.js'
+import { useSettings } from '../settings.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
 import type {
@@ -82,6 +83,12 @@ export const request = async (url: string, init: RequestInit): Promise<Response>
   return response
 }
 
+/** 设置了 Strata 地址时带上这个头：开发服务器代理按它转发，浏览器始终同源，无需 CORS 配置 */
+const strataHeaders = (): Record<string, string> => {
+  const url = useSettings.getState().strataUrl
+  return url ? { 'x-strata-url': url } : {}
+}
+
 const anthropicHeaders = (apiKey: string, beta: boolean): Record<string, string> => ({
   // DeepSeek 兼容接口的鉴权方式，也可使用 Authorization: Bearer。
   'x-api-key': apiKey,
@@ -93,7 +100,7 @@ const anthropicHeaders = (apiKey: string, beta: boolean): Record<string, string>
 export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promise<void> => {
   await request(`${API_ORIGIN}/models`, {
     method: 'GET',
-    headers: { Authorization: `Bearer ${apiKey}` },
+    headers: { Authorization: `Bearer ${apiKey}`, ...strataHeaders() },
     signal,
   })
 }
@@ -115,7 +122,7 @@ export const uploadFile = async (
   form.append('file', file)
   const response = await request(`${ANTHROPIC_BASE_URL}/files`, {
     method: 'POST',
-    headers: anthropicHeaders(apiKey, true),
+    headers: { ...anthropicHeaders(apiKey, true), ...strataHeaders() },
     body: form,
     signal,
   })
@@ -126,7 +133,7 @@ export const uploadFile = async (
 export const deleteFile = async (apiKey: string, fileId: string): Promise<void> => {
   await request(`${ANTHROPIC_BASE_URL}/files/${encodeURIComponent(fileId)}`, {
     method: 'DELETE',
-    headers: anthropicHeaders(apiKey, true),
+    headers: { ...anthropicHeaders(apiKey, true), ...strataHeaders() },
   })
 }
 
@@ -150,6 +157,7 @@ export async function* streamMessage(
     method: 'POST',
     headers: {
       ...anthropicHeaders(apiKey, hasFile(body)),
+      ...strataHeaders(),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
     },

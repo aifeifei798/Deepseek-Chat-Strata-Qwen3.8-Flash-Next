@@ -21,6 +21,8 @@ type Settings = {
   thinkingLevel: ThinkingLevel
   search: boolean
   siderCollapsed: boolean
+  /** Strata 服务地址；空 = 走开发服务器代理（.env 的 STRATA_URL），填写后请求带 x-strata-url 头由代理转发 */
+  strataUrl: string
 }
 
 const KEYS = {
@@ -31,6 +33,7 @@ const KEYS = {
   ttsVoice: 'chat-demo:tts-voice',
   thinking: 'chat-demo:thinking',
   thinkingLevel: 'chat-demo:thinking-level',
+  strataUrl: 'chat-demo:strata-url',
   search: 'chat-demo:search',
   siderCollapsed: 'chat-demo:sider-collapsed',
 } as const
@@ -114,6 +117,7 @@ export const useSettings = create<Settings>(() => ({
   ttsVoice: initialTtsVoice(),
   thinking: initialThinking(),
   thinkingLevel: initialThinkingLevel(),
+  strataUrl: (read(KEYS.strataUrl) ?? '').replace(/\/+$/, ''),
   search: read(KEYS.search) === 'true',
   siderCollapsed: read(KEYS.siderCollapsed) === 'true',
 }))
@@ -152,6 +156,12 @@ export const setThinking = (thinking: boolean) => {
 export const setThinkingLevel = (thinkingLevel: ThinkingLevel) => {
   write(KEYS.thinkingLevel, thinkingLevel)
   useSettings.setState({ thinkingLevel })
+}
+
+export const setStrataUrl = (strataUrl: string) => {
+  const normalized = strataUrl.trim().replace(/\/+$/, '')
+  write(KEYS.strataUrl, normalized || null)
+  useSettings.setState({ strataUrl: normalized })
 }
 
 export const setSearch = (search: boolean) => {
