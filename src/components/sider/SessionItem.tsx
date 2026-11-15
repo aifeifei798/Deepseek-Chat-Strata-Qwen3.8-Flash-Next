@@ -20,6 +20,7 @@ export const SessionItem = memo(function SessionItem({
 }) {
   const t = useTranslate()
   const [editing, setEditing] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
   const displayTitle = session.title || t('untitledChat')
 
   if (editing) {
@@ -33,6 +34,7 @@ export const SessionItem = memo(function SessionItem({
       <input
         className={styles.renameInput}
         defaultValue={displayTitle}
+        aria-label={t('sessionItemMenuRenameOption')}
         autoFocus
         onFocus={(event) => event.target.select()}
         onBlur={(event) => finish(event.target.value)}
@@ -49,7 +51,7 @@ export const SessionItem = memo(function SessionItem({
 
   return (
     <div
-      className={clsx(styles.item, active && styles.active)}
+      className={clsx(styles.item, active && styles.active, menuOpen && styles.menuOpen)}
       onClick={() => {
         selectSession(session.id)
         closeMobileSider()
@@ -58,6 +60,7 @@ export const SessionItem = memo(function SessionItem({
       <div className={styles.title}>{displayTitle}</div>
       <div className={styles.action} onClick={(event) => event.stopPropagation()}>
         <Menu
+          onOpenChange={setMenuOpen}
           options={[
             {
               key: 'rename',

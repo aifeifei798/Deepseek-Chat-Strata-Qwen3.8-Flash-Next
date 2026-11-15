@@ -16,13 +16,19 @@
     color: var(--dsw-alias-brand-primary-invert);
   }
 
+  /* 菜单打开期间行保持高亮、三点按钮保持显示，锚点不因 hover 丢失而塌陷 */
+  &.menuOpen:not(.active) {
+    background-color: var(--dsw-specific-sidebar-nav-item-hover);
+  }
+
   @media (hover: hover) {
     &:not(.active):hover {
       background-color: var(--dsw-specific-sidebar-nav-item-hover);
     }
 
     &:hover,
-    &.active {
+    &.active,
+    &.menuOpen {
       .action {
         display: flex;
       }
@@ -57,6 +63,10 @@
   font: inherit;
   font-size: 14px;
   outline: none;
+
+  &:focus-visible {
+    outline: 2px solid var(--dsw-alias-brand-primary);
+  }
 }
 
 @media (hover: none) {
