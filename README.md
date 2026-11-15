@@ -90,7 +90,7 @@ Strata 装在非默认位置时：`./install.sh --strata-home /path/to/strata`�
 
 ## 已知限制
 
-- **附件上传不可用**：chat-demo 走 Anthropic Files API（`/v1/files`），Strata 没有这个端点；语音输入是浏览器本机功能，可用
+- **附件仅支持图片**：Files API（`/v1/files`）已关闭，图片以 base64 内联进对话请求（单张 ≤10MB，最多 50 张；PNG/JPG/GIF/WebP），要求 Strata 及其模型支持图像输入；文档类附件不支持，历史归档里的文档仅展示
 - **智能搜索 / 链接阅读**是 DeepSeek 云端能力，接本地模型没有意义（开关会被 Strata 忽略）
 - API Key 仅作占位：本地 Strata 默认不校验；若你的 Strata 用 `--access lan` 等开了 key 的模式，把真 key 填进去即可
 

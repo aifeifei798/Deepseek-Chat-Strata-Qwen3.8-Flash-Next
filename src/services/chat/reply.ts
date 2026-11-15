@@ -15,21 +15,19 @@ import type {
   UserMessage,
 } from './types.js'
 
+/** 附件本地原件的 base64：请求构建前由 store 预加载，键为附件的本地 id */
+export type ImageData = { media_type: FileBlockParam['source']['media_type']; data: string }
+
 /**
- * 文件按 Files API 的 file_id（附件的 serverId）引用：图片用 image 块，其余用 document 块。
- * 发送前 streamReply 会先补齐 serverId；仍为 null 的是本地没有原件的附件，不进入请求。
+ * 图片以 base64 内联进请求；本地没有原件或 MIME 不被接口支持的附件不进入请求。
  */
-const toFileBlocks = (files: FileAttachment[]): FileBlockParam[] =>
-  files.flatMap(({ serverId, isImage }) =>
-    serverId
-      ? [
-          {
-            type: isImage ? 'image' : 'document',
-            source: { type: 'file', file_id: serverId },
-          },
-        ]
+const toFileBlocks = (files: FileAttachment[], imageData: Map<string, ImageData>): FileBlockParam[] =>
+  files.flatMap(({ id, isImage }) => {
+    const image = isImage ? imageData.get(id) : undefined
+    return image
+      ? [{ type: 'image', source: { type: 'base64', media_type: image.media_type, data: image.data } }]
       : []
-  )
+  })
 
 const toReplyBlock = (block: OutputBlockStart, now: number): ReplyBlock | null => {
   switch (block.type) {
@@ -201,9 +199,9 @@ const isUsableReply = (message: Message): message is AssistantMessage =>
   !message.blocks.some((block) => block.type === 'text' && block.isTemplate) &&
   getReplyText(message) !== ''
 
-/** 有文件时用内容块数组：先文件后文本，文件按 Files API 的 file_id 引用 */
-const toUserParam = ({ content, files }: UserMessage): MessageParam => {
-  const blocks = toFileBlocks(files)
+/** 有图片时用内容块数组：先图片后文本 */
+const toUserParam = ({ content, files }: UserMessage, imageData: Map<string, ImageData>): MessageParam => {
+  const blocks = toFileBlocks(files, imageData)
   return blocks.length === 0
     ? { role: 'user', content }
     : {
@@ -303,6 +301,7 @@ export const getContextRounds = (history: Message[]): [UserMessage, AssistantMes
 export const toRequestMessages = (
   history: Message[],
   question: UserMessage,
+  imageData: Map<string, ImageData>,
   prefix?: AssistantMessage,
   thinking = prefix?.thinking ?? false,
   latestReminder?: string
@@ -317,15 +316,15 @@ export const toRequestMessages = (
     }
   }
   for (const [user, reply] of getContextRounds(history)) {
-    // 历史提问没有文字、附件也都没有 serverId 时，提问为空，连同回答一起省略。
-    if (!user.content && toFileBlocks(user.files).length === 0) {
+    // 历史提问没有文字、附件也都没有本地原件时，提问为空，连同回答一起省略。
+    if (!user.content && toFileBlocks(user.files, imageData).length === 0) {
       continue
     }
     appendReminder(reply.latestReminder)
-    messages.push(toUserParam(user), toAssistantParam(reply))
+    messages.push(toUserParam(user, imageData), toAssistantParam(reply))
   }
   appendReminder(latestReminder)
-  messages.push(toUserParam(question))
+  messages.push(toUserParam(question, imageData))
   if (prefix?.prefix) {
     const assistant = toAssistantParam(prefix, true, thinking)
     // 没有非空白正文或有效思考时直接重发原问题，避免服务端拒绝空 Prefill。

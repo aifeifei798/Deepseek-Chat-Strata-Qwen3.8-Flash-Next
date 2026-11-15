@@ -17,8 +17,6 @@ import { Welcome } from '../components/session/Welcome.js'
 import { ensureApiKey } from '../components/settings/settingsDialogState.js'
 import { SettingsDialog } from '../components/settings/SettingsDialog.js'
 import { Toast } from '../components/base/Toast.js'
-import { showToast } from '../components/base/toastState.js'
-import { onUploadNotice } from '../services/attachments.js'
 import { Button } from '../components/base/Button.js'
 import { stopReadAloud } from '../services/speech/readAloud.js'
 import { CollapsedSider } from '../components/sider/CollapsedSider.js'
@@ -56,8 +54,6 @@ export const App = () => {
     document.documentElement.lang = locale
   }, [locale])
 
-  // 文件数、存储空间达到上限时，附件上只显示「上传失败」，原因用 toast 说明
-  useEffect(() => onUploadNotice(showToast), [])
   useEffect(bindChatPersistence, [])
 
   // 搜索结果面板只属于当前会话

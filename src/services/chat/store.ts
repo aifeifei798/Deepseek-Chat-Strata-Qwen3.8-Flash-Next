@@ -2,8 +2,7 @@ import { create } from 'zustand'
 import { createId } from '../../utils/id.js'
 import { ApiError, streamMessage } from '../api/client.js'
 import type { ChatModel, CreateMessageRequest } from '../api/types.js'
-import { extractFileIds, getFileErrorCode, isRetryableApiError } from '../api/errors.js'
-import { cancelUpload, describeUploadError, uploadAttachment, useUploads } from '../attachments.js'
+import { blobToBase64, toInlineMediaType } from '../attachments.js'
 import { useSettings } from '../settings.js'
 import { appendBranch, getVisibleMessages, normalizeSession, selectVersion } from './branches.js'
 import * as db from './db.js'
@@ -18,9 +17,9 @@ import { createLatestReminder } from './latestReminder.js'
 import {
   applyEvent,
   canContinueReply,
-  getContextRounds,
   settleReply,
   toRequestMessages,
+  type ImageData,
 } from './reply.js'
 import {
   toSessionSummary,
@@ -40,10 +39,6 @@ const SYSTEM_PROMPT = '该助手为DeepSeek，由深度求索公司创造。'
 const SESSION_CACHE_LIMIT = 5
 /** 安全审核固定开启，所有请求都走扩展模式 */
 const SAFETY_CHECK = { level: 'high' } as const
-/** 服务端判定 file_id 失效后，重新补传并重发的最多次数（不含首次请求） */
-const FILE_RETRY_LIMIT = 2
-/** 退避基数，第 n 次重试等待 2^n 倍；连续失败达到上限就放弃，把原始报错展示出来 */
-const FILE_RETRY_BASE_DELAY = 1000
 
 /** 阅读链接始终开启，智能搜索开关控制是否另行声明搜索工具（含边想边搜）。 */
 const serverTools = (search: boolean): CreateMessageRequest['tools'] => {
@@ -574,7 +569,7 @@ export const sendMessage = (targetSessionId: string | null) => {
   if (get().importingHistory || !get().ready) {
     return false
   }
-  const prepared = prepareDraftMessage(getDraft(targetSessionId), useUploads.getState().tasks)
+  const prepared = prepareDraftMessage(getDraft(targetSessionId))
   if (!prepared) {
     return false
   }
@@ -642,7 +637,12 @@ export const sendMessage = (targetSessionId: string | null) => {
   }
   persist(sessionId)
   clearSentDraft(targetSessionId)
-  void streamReply(sessionId, reply, { history, question })
+  // 本轮提问的附件带着原件进入流式：落盘可能尚未完成，请求内联不能只依赖 IndexedDB
+  void streamReply(sessionId, reply, {
+    history,
+    question,
+    questionBlobs: new Map(files.map((file) => [file.id, file.blob])),
+  })
   return true
 }
 
@@ -755,241 +755,52 @@ export const continueReply = (sessionId: string, messageId: string) => {
   void streamReply(sessionId, reply, { history: path.slice(0, -2), question, prefix: previous })
 }
 
-/** 附件补传失败后重试：保留原回答位置，重新补传并请求 */
-export const retryUpload = (sessionId: string, messageId: string) => {
-  if (get().importingHistory || deletingSessions.has(sessionId)) {
-    return
-  }
-  const session = getSession(sessionId)
-  if (!session || getStreamController(sessionId)) {
-    return
-  }
-  const path = getVisibleMessages(session)
-  const index = path.findIndex((message) => message.id === messageId)
-  const question = path[index - 1]
-  const previous = path[index]
-  if (
-    question?.role !== 'user' ||
-    previous?.role !== 'assistant' ||
-    previous.error?.kind !== 'upload'
-  ) {
-    return
-  }
-  const reply: AssistantMessage = { ...previous, status: 'pending', error: undefined }
-  updateReply(sessionId, reply)
-  persist(sessionId)
-  void streamReply(sessionId, reply, { history: path.slice(0, index - 1), question })
-}
-
-type Request = { history: Message[]; question: UserMessage; prefix?: AssistantMessage }
-
-/** 把补传得到的 serverId 写回会话里所有引用同一附件的消息（编辑、重新生成会共用附件） */
-const saveServerIds = (sessionId: string, serverIds: Map<string, string>) => {
-  if (serverIds.size === 0) {
-    return
-  }
-  updateSession(sessionId, (session) => ({
-    ...session,
-    messages: session.messages.map((message) =>
-      message.role === 'user' && message.files.some((file) => serverIds.has(file.id))
-        ? {
-            ...message,
-            files: message.files.map((file) =>
-              serverIds.has(file.id) ? { ...file, serverId: serverIds.get(file.id) ?? null } : file
-            ),
-          }
-        : message
-    ),
-  }))
-  persist(sessionId)
+type Request = {
+  history: Message[]
+  question: UserMessage
+  prefix?: AssistantMessage
+  /** 本轮提问附件的原件：落盘可能尚未完成，请求内联不能只依赖 IndexedDB */
+  questionBlobs?: Map<string, Blob>
 }
 
 /**
- * 附件的服务端 id：已有直接用；正在上传的等待同一任务；否则读取本地原件补传。
- * 本地也没有原件（导入的文档附件只有元数据）时返回 null，该附件只展示、不进入请求。
+ * 请求前把上下文里所有图片附件的原件读成 base64：本轮提问用 sendMessage 传入的 blob，
+ * 历史轮次按附件 id 从 IndexedDB 读取，同一附件只读一次。原件缺失或 MIME 不被接口
+ * 支持的附件不进入请求（导入的文档附件本来就是仅展示）。中止信号随时生效。
  */
-const ensureServerId = async (apiKey: string, file: FileAttachment): Promise<string | null> => {
-  if (file.serverId) {
-    return file.serverId
-  }
-  const task = useUploads.getState().tasks[file.id]
-  if (task?.status === 'done') {
-    return task.serverId
-  }
-  const blob = await db.loadFile(file.id)
-  if (!blob) {
-    return null
-  }
-  return uploadAttachment(apiKey, file.id, blob, file.name, file.isImage)
-}
-
-/** 用会话里的最新消息替换请求快照：重传前会重置附件的 serverId，快照必须跟着更新 */
-const refreshRequest = (sessionId: string, request: Request): Request => {
-  const session = getSession(sessionId)
-  if (!session) {
-    return request
-  }
-  const byId = new Map(session.messages.map((message) => [message.id, message]))
-  const pick = <T extends Message>(message: T): T =>
-    (byId.get(message.id) as T | undefined) ?? message
-  return {
-    history: request.history.map(pick),
-    question: pick(request.question),
-    prefix: request.prefix,
-  }
-}
-
-/**
- * 发送前补齐附件的 serverId。
- * - 本轮提问的附件并行补齐，任一失败则整体失败，已成功的照常写回，重试时复用成功结果；
- * - 历史轮次（仅进入上下文的）中没有 serverId 的附件，多为导入的图片：从最新的消息往前逐张补传，
- *   失败静默跳过，该附件不进入本次请求，下次发送时再试。
- */
-const prepareFiles = async (sessionId: string, request: Request, signal: AbortSignal) => {
-  const epoch = historyEpoch
-  // 服务端判定 file_id 失效时会清掉会话里的 serverId，先用最新消息替换请求快照，
-  // 否则快照里仍是旧 id，补传会直接复用它。
-  request = refreshRequest(sessionId, request)
-  const apiKey = useSettings.getState().apiKey ?? ''
-  const serverIds = new Map<string, string>()
-  // 停止生成立即生效；上传本身不取消（输入框与其他消息可能共用同一任务），完成后照常写回 serverId
-  const aborted = new Promise<never>((_, reject) => {
-    signal.addEventListener('abort', () => reject(signal.reason), { once: true })
-  })
-  const uploads = Promise.allSettled(
-    request.question.files.map(async (file) => {
-      const serverId = await ensureServerId(apiKey, file)
-      if (serverId) {
-        serverIds.set(file.id, serverId)
-      }
-    })
-  )
-  void uploads.then(() => {
-    if (epoch === historyEpoch) {
-      saveServerIds(sessionId, serverIds)
-    }
-  })
-  const results = await Promise.race([uploads, aborted])
-  const failed = results.find((result) => result.status === 'rejected')
-  if (failed) {
-    throw failed.reason
-  }
-
-  const pending = new Map<string, FileAttachment>()
-  for (const [user] of getContextRounds(request.history).toReversed()) {
-    for (const file of user.files) {
-      if (!file.serverId && !serverIds.has(file.id) && !pending.has(file.id)) {
-        pending.set(file.id, file)
-      }
-    }
-  }
-  for (const file of pending.values()) {
-    signal.throwIfAborted()
-    try {
-      const serverId = await Promise.race([ensureServerId(apiKey, file), aborted])
-      if (serverId) {
-        serverIds.set(file.id, serverId)
-        saveServerIds(sessionId, new Map([[file.id, serverId]]))
-      }
-    } catch {
-      signal.throwIfAborted()
-    }
-  }
-
-  // 用补齐后的会话重新取历史与提问，保证请求里都是 serverId
-  const session = getSession(sessionId)
-  const resolve = <T extends Message>(message: T): T =>
-    (session?.messages.find((m) => m.id === message.id) as T | undefined) ?? message
-  return {
-    history: request.history.map(resolve),
-    question: resolve(request.question),
-    prefix: request.prefix,
-  }
-}
-
-/** 本次请求实际会用到的服务端 file_id */
-const collectServerFileIds = (request: Request): Set<string> => {
-  const ids = new Set<string>()
-  const add = (files: FileAttachment[]) => {
-    for (const file of files) {
-      if (file.serverId) {
-        ids.add(file.serverId)
-      }
-    }
-  }
-  add(request.question.files)
-  for (const [user] of getContextRounds(request.history)) {
-    add(user.files)
-  }
-  return ids
-}
-
-/**
- * 服务端判定 file_id 失效时，清掉对应附件的 serverId 并丢弃旧的上传任务，
- * 下一次补齐会重新读取本地原件上传。报错里点名了 file_id 就只重置这些，
- * 没点名（如 invalid file_id）则重置本次请求用到的全部附件。
- */
-const reuploadInvalidatedFiles = (sessionId: string, request: Request, error: unknown): boolean => {
-  if (!(error instanceof ApiError) || !getFileErrorCode(error)) {
-    return false
-  }
-  const mentioned = extractFileIds(error.message)
-  // 重试时原始快照里还是上一轮已被清掉的 serverId，先换成会话里的最新消息
-  const targets =
-    mentioned.length > 0
-      ? new Set(mentioned)
-      : collectServerFileIds(refreshRequest(sessionId, request))
-  const session = getSession(sessionId)
-  if (targets.size === 0 || !session) {
-    return false
-  }
-  const localIds: string[] = []
-  const messages = session.messages.map((message) => {
+const prepareImageData = async (
+  request: Request,
+  signal: AbortSignal
+): Promise<Map<string, ImageData>> => {
+  const imageData = new Map<string, ImageData>()
+  const seen = new Set<string>()
+  const entries: { file: FileAttachment; blob: Blob | null }[] = []
+  for (const message of [...request.history, request.question]) {
     if (message.role !== 'user') {
-      return message
+      continue
     }
-    let changed = false
-    const files = message.files.map((file) => {
-      if (!file.serverId || !targets.has(file.serverId)) {
-        return file
+    for (const file of message.files) {
+      if (seen.has(file.id)) {
+        continue
       }
-      localIds.push(file.id)
-      changed = true
-      return { ...file, serverId: null }
-    })
-    return changed ? { ...message, files } : message
-  })
-  if (localIds.length === 0) {
-    return false
+      seen.add(file.id)
+      entries.push({ file, blob: request.questionBlobs?.get(file.id) ?? null })
+    }
   }
-  updateSession(sessionId, (current) => ({ ...current, messages }))
-  // 上传任务里可能还留着同一个失效的 serverId，清掉后 ensureServerId 才会重新上传
-  localIds.forEach(cancelUpload)
-  persist(sessionId)
-  return true
+  for (const { file, blob } of entries) {
+    signal.throwIfAborted()
+    const mediaType = file.isImage ? toInlineMediaType(file.mimeType) : null
+    const original = mediaType ? (blob ?? (await db.loadFile(file.id))) : null
+    if (mediaType && original) {
+      imageData.set(file.id, { media_type: mediaType, data: await blobToBase64(original) })
+    }
+  }
+  return imageData
 }
 
-/** 重传前的退避等待；停止生成时立即返回，由调用方按已停止收尾 */
-const waitForRetry = (attempt: number, signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    function onAbort() {
-      clearTimeout(timer)
-      resolve()
-    }
-    const timer = setTimeout(
-      () => {
-        signal.removeEventListener('abort', onAbort)
-        resolve()
-      },
-      FILE_RETRY_BASE_DELAY * 2 ** attempt
-    )
-    signal.addEventListener('abort', onAbort, { once: true })
-  })
-
 /**
- * 请求并消费流：先补齐附件的 serverId，再发请求；流式增量按动画帧刷新内存，完成、失败或停止后落盘。
- * 补传失败时回复记为 upload 错误，可重试。
- * 服务端判定 file_id 失效时重新补传后重发，退避重试且次数有上限，超过则按原始报错收尾。
+ * 请求并消费流：先把上下文里的图片读成 base64，再发请求；流式增量按动画帧刷新内存，
+ * 完成、失败或停止后落盘。没有上传环节，请求前出错只剩中止一种情况。
  */
 const streamReply = async (sessionId: string, initial: AssistantMessage, request: Request) => {
   const controller = new AbortController()
@@ -1008,118 +819,84 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
   streamFlushes.set(sessionId, flush)
 
   try {
-    for (let attempt = 0; ; attempt += 1) {
-      /** 附件补齐前出错属于上传失败，请求还没有发出 */
-      let preparing = true
-      let receivedContent = false
-      try {
-        const prepared = await prepareFiles(sessionId, request, controller.signal)
-        preparing = false
-        // 附件就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
-        const latestReminder = prepared.prefix
-          ? prepared.prefix.latestReminder
-          : createLatestReminder(useSettings.getState())
-        reply = { ...reply, latestReminder }
-        updateReply(sessionId, reply)
-        persist(sessionId)
-        const messages = toRequestMessages(
-          prepared.history,
-          prepared.question,
-          prepared.prefix,
-          initial.thinking ?? false,
-          latestReminder
+    const imageData = await prepareImageData(request, controller.signal)
+    // 图片就绪后获取本轮信息；续写沿用原回答快照，重新生成的快照独立保存。
+    const latestReminder = request.prefix
+      ? request.prefix.latestReminder
+      : createLatestReminder(useSettings.getState())
+    reply = { ...reply, latestReminder }
+    updateReply(sessionId, reply)
+    persist(sessionId)
+    const messages = toRequestMessages(
+      request.history,
+      request.question,
+      imageData,
+      request.prefix,
+      initial.thinking ?? false,
+      latestReminder
+    )
+    const events = streamMessage(
+      useSettings.getState().apiKey ?? '',
+      {
+        model: initial.model ?? MODEL,
+        system: SYSTEM_PROMPT,
+        messages,
+        thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
+        ...(initial.thinking
+          ? { output_config: { effort: initial.thinkingLevel ?? useSettings.getState().thinkingLevel } }
+          : {}),
+        safety_check: SAFETY_CHECK,
+        tools: serverTools(initial.search ?? false),
+        ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
+      },
+      controller.signal
+    )
+    const blockIndexes = new Map<number, number>()
+    for await (const event of events) {
+      if (
+        event.type === 'message_delta' &&
+        (event.delta.stop_reason === 'end_turn' || event.delta.stop_reason === 'max_tokens') &&
+        event.delta.title?.trim() &&
+        titleRequests.has(controller) &&
+        !controller.signal.aborted &&
+        !get().importingHistory
+      ) {
+        const title = event.delta.title.trim()
+        // 推导名让位给服务端语义标题；用户手动的改名不受影响（改名时会取消本轮请求）。
+        updateSession(sessionId, (session) =>
+          !session.title || derivedTitles.has(sessionId)
+            ? { ...session, title }
+            : session
         )
-        const events = streamMessage(
-          useSettings.getState().apiKey ?? '',
-          {
-            model: initial.model ?? MODEL,
-            system: SYSTEM_PROMPT,
-            messages,
-            thinking: { type: initial.thinking ? 'enabled' : 'disabled' },
-            ...(initial.thinking
-              ? { output_config: { effort: initial.thinkingLevel ?? useSettings.getState().thinkingLevel } }
-              : {}),
-            safety_check: SAFETY_CHECK,
-            tools: serverTools(initial.search ?? false),
-            ...(titleRequests.has(controller) ? { title: { enabled: true } } : {}),
-          },
-          controller.signal
-        )
-        const blockIndexes = new Map<number, number>()
-        for await (const event of events) {
-          receivedContent ||= event.type === 'content_block_start'
-          if (
-            event.type === 'message_delta' &&
-            (event.delta.stop_reason === 'end_turn' || event.delta.stop_reason === 'max_tokens') &&
-            event.delta.title?.trim() &&
-            titleRequests.has(controller) &&
-            !controller.signal.aborted &&
-            !get().importingHistory
-          ) {
-            const title = event.delta.title.trim()
-            // 推导名让位给服务端语义标题；用户手动的改名不受影响（改名时会取消本轮请求）。
-            updateSession(sessionId, (session) =>
-              !session.title || derivedTitles.has(sessionId)
-                ? { ...session, title }
-                : session
-            )
-            derivedTitles.delete(sessionId)
-            titleRequests.delete(controller)
-          }
-          reply = applyEvent(reply, event, Date.now(), blockIndexes)
-          if (document.visibilityState === 'hidden') {
-            flush()
-          } else {
-            frame ||= requestAnimationFrame(flush)
-          }
-        }
-        reply = settleReply(reply, 'done', Date.now())
-        break
-      } catch (error) {
-        if (controller.signal.aborted) {
-          reply = settleReply(reply, 'stopped', Date.now())
-          break
-        }
-        if (preparing) {
-          reply = settleReply(reply, 'error', Date.now(), {
-            kind: 'upload',
-            message: '',
-            localMessage: describeUploadError(error),
-            retryable: isRetryableApiError(error),
-          })
-          break
-        }
-        // 附件失效：重新补传后重发。收到过内容块（含丢弃的客户端工具）后不自动重发。
-        if (
-          attempt < FILE_RETRY_LIMIT &&
-          !receivedContent &&
-          reuploadInvalidatedFiles(sessionId, request, error)
-        ) {
-          await waitForRetry(attempt, controller.signal)
-          if (controller.signal.aborted) {
-            reply = settleReply(reply, 'stopped', Date.now())
-            break
-          }
-          continue
-        }
-        if (error instanceof ApiError && error.kind === 'interrupted' && reply.stopReason) {
-          // 已收到 message_delta 的结束原因，只是缺了结尾的 message_stop
-          reply = settleReply(reply, 'done', Date.now())
-        } else if (error instanceof ApiError) {
-          reply = settleReply(reply, 'error', Date.now(), {
-            kind: error.kind,
-            message: error.message,
-            status: error.status,
-            localMessage: error.localMessage,
-          })
-        } else {
-          reply = settleReply(reply, 'error', Date.now(), {
-            kind: 'protocol',
-            message: error instanceof Error ? error.message : String(error),
-          })
-        }
-        break
+        derivedTitles.delete(sessionId)
+        titleRequests.delete(controller)
       }
+      reply = applyEvent(reply, event, Date.now(), blockIndexes)
+      if (document.visibilityState === 'hidden') {
+        flush()
+      } else {
+        frame ||= requestAnimationFrame(flush)
+      }
+    }
+    reply = settleReply(reply, 'done', Date.now())
+  } catch (error) {
+    if (controller.signal.aborted) {
+      reply = settleReply(reply, 'stopped', Date.now())
+    } else if (error instanceof ApiError && error.kind === 'interrupted' && reply.stopReason) {
+      // 已收到 message_delta 的结束原因，只是缺了结尾的 message_stop
+      reply = settleReply(reply, 'done', Date.now())
+    } else if (error instanceof ApiError) {
+      reply = settleReply(reply, 'error', Date.now(), {
+        kind: error.kind,
+        message: error.message,
+        status: error.status,
+        localMessage: error.localMessage,
+      })
+    } else {
+      reply = settleReply(reply, 'error', Date.now(), {
+        kind: 'protocol',
+        message: error instanceof Error ? error.message : String(error),
+      })
     }
   } finally {
     titleRequests.delete(controller)

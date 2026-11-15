@@ -2,20 +2,12 @@ import { translate, type TranslationMessage } from '../../i18n/index.js'
 import { useSettings } from '../settings.js'
 import { readMessageEvent } from './parseEvent.js'
 import { readServerSentEvents } from './sse.js'
-import type {
-  ApiErrorBody,
-  CreateMessageRequest,
-  FileObject,
-  FilePurpose,
-  MessageStreamEvent,
-} from './types.js'
+import type { ApiErrorBody, CreateMessageRequest, MessageStreamEvent } from './types.js'
 
 /** 构建期 API 地址，默认 https://api.deepseek.com；本地开发支持开发服务器代理 */
 export const API_ORIGIN = __API_ORIGIN__
 /** Anthropic 兼容接口的前缀 */
 const ANTHROPIC_BASE_URL = `${API_ORIGIN}/anthropic/v1`
-/** 引用 Files API 上传的图片、调用 Anthropic 兼容 Files API 时必须携带 */
-const FILES_BETA = 'files-api-2025-04-14'
 
 export type ApiErrorKind =
   /** 非 2xx 响应 */
@@ -89,11 +81,9 @@ const strataHeaders = (): Record<string, string> => {
   return url ? { 'x-strata-url': url } : {}
 }
 
-const anthropicHeaders = (apiKey: string, beta: boolean): Record<string, string> => ({
+const anthropicHeaders = (apiKey: string): Record<string, string> => ({
   // DeepSeek 兼容接口的鉴权方式，也可使用 Authorization: Bearer。
   'x-api-key': apiKey,
-  // Files API 和通过 file_id 引用图片时必传；纯文本聊天无需携带。
-  ...(beta ? { 'anthropic-beta': FILES_BETA } : {}),
 })
 
 /** 用 GET /models 校验 API Key（不产生费用） */
@@ -104,45 +94,6 @@ export const verifyApiKey = async (apiKey: string, signal?: AbortSignal): Promis
     signal,
   })
 }
-
-/**
- * POST /anthropic/v1/files 上传附件（不设过期时间，会话里的历史附件一直可用）。
- * purpose 为 null 时不传该字段（图片）；purpose 必须排在 file 之前。
- */
-export const uploadFile = async (
-  apiKey: string,
-  file: File,
-  purpose: FilePurpose | null,
-  signal?: AbortSignal
-): Promise<FileObject> => {
-  const form = new FormData()
-  if (purpose) {
-    form.append('purpose', purpose)
-  }
-  form.append('file', file)
-  const response = await request(`${ANTHROPIC_BASE_URL}/files`, {
-    method: 'POST',
-    headers: { ...anthropicHeaders(apiKey, true), ...strataHeaders() },
-    body: form,
-    signal,
-  })
-  return (await response.json()) as FileObject
-}
-
-/** DELETE /anthropic/v1/files/{file_id} */
-export const deleteFile = async (apiKey: string, fileId: string): Promise<void> => {
-  await request(`${ANTHROPIC_BASE_URL}/files/${encodeURIComponent(fileId)}`, {
-    method: 'DELETE',
-    headers: { ...anthropicHeaders(apiKey, true), ...strataHeaders() },
-  })
-}
-
-const hasFile = (body: CreateMessageRequest) =>
-  body.messages.some(
-    (message) =>
-      typeof message.content !== 'string' &&
-      message.content.some((block) => block.type === 'image' || block.type === 'document')
-  )
 
 /**
  * POST /anthropic/v1/messages（stream: true），逐个产出流式事件，收到 message_stop 时结束。
@@ -156,7 +107,7 @@ export async function* streamMessage(
   const response = await request(`${ANTHROPIC_BASE_URL}/messages`, {
     method: 'POST',
     headers: {
-      ...anthropicHeaders(apiKey, hasFile(body)),
+      ...anthropicHeaders(apiKey),
       ...strataHeaders(),
       'Content-Type': 'application/json',
       Accept: 'text/event-stream',
