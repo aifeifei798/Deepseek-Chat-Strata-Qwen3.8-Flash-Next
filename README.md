@@ -1,4 +1,4 @@
-# Deepseek-Chat-Strata-Qwen3.8-Flash-Next
+# Strata-Chat
 
 [English](https://github.com/deepseek-ai/chat-demo) | 简体中文
 
@@ -21,8 +21,8 @@ Strata 服务器 (默认 http://127.0.0.1:8080)
 前提：一台跑着 [Strata](https://github.com/Niko1221/Strata) 的机器（装好 Terminal 和模型，`strata launch` 能出地址），Node.js 22.12+，python3（打补丁用）。
 
 ```sh
-git clone https://github.com/aifeifei798/Deepseek-Chat-Strata-Qwen3.8-Flash-Next.git
-cd Deepseek-Chat-Strata-Qwen3.8-Flash-Next
+git clone https://github.com/aifeifei798/Strata-Chat.git
+cd Strata-Chat
 ./install.sh            # 装依赖、生成 .env、给 Strata 打本项目专用的兼容补丁（说明见下文）
 ./serve.sh start        # 拉起网页（.env 配了 STRATA_MODEL_PATH 时连 Strata 一起拉起）
 ```

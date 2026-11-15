@@ -1,7 +1,7 @@
 {
-  "name": "chat-demo",
+  "name": "strata-chat",
   "version": "0.1.1",
-  "description": "基于 DeepSeek API 的静态聊天示例。",
+  "description": "基于 deepseek-ai/chat-demo（Strata-Chat）的静态聊天示例，接入本地 Strata 服务器。",
   "license": "MIT",
   "private": true,
   "type": "module",

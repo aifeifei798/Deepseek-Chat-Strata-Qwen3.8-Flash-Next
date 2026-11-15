@@ -1,4 +1,4 @@
-# chat-demo（定制版）
+# Strata-Chat（定制版）
 
 本项目是 [deepseek-ai/chat-demo](https://github.com/deepseek-ai/chat-demo) 接入本地 Strata 服务器的定制版，中文文档与完整说明见 [README.md](README.md)。
 
