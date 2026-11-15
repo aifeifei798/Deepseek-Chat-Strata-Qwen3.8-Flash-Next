@@ -7,7 +7,7 @@ export type Locale = 'zh-CN' | 'en-US'
 /** 主题偏好；默认跟随系统 */
 export type ThemePreference = 'light' | 'dark' | 'system'
 
-/** 深度思考的思考力度；Qwen3.8 模板的原生三挡，默认 xhigh */
+/** 深度思考的思考力度；Qwen3.8 模板的原生三挡，默认 medium */
 export type ThinkingLevel = 'low' | 'medium' | 'xhigh'
 
 /** 本机设置，存 localStorage：API Key、语言、主题、位置、朗读音色、深度思考与智能搜索开关、侧边栏收起状态 */
@@ -95,10 +95,10 @@ const initialThemePreference = (): ThemePreference => {
 /** 未保存过时使用服务端默认音色 stella（海星） */
 const initialTtsVoice = (): TtsVoice => (read(KEYS.ttsVoice) === 'tide' ? 'tide' : 'stella')
 
-/** 档位功能上线前没有 thinking-level 键：老状态不继承，默认 xhigh 开启；之后以存储为准 */
+/** 档位功能上线前没有 thinking-level 键：老状态不继承，默认 medium 开启；之后以存储为准 */
 const initialThinkingLevel = (): ThinkingLevel => {
   const saved = read(KEYS.thinkingLevel)
-  return saved === 'low' || saved === 'medium' || saved === 'xhigh' ? saved : 'xhigh'
+  return saved === 'low' || saved === 'medium' || saved === 'xhigh' ? saved : 'medium'
 }
 
 const initialThinking = (): boolean => {
