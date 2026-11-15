@@ -18,8 +18,7 @@ jobs:
     timeout-minutes: 15
     permissions:
       contents: read
-      # configure-pages 的 enablement: true 需要这个权限为仓库自行开通 Pages
-      administration: write
+      pages: read
     steps:
       - name: Check out source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,9 +45,8 @@ jobs:
 
       - name: Configure GitHub Pages
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
-        with:
-          # 仓库还没开过 Pages 时由 action 直接开通，避免每次 push 都在配置步骤 404
-          enablement: true
+        # 依赖仓库已开启 Pages（Settings → Pages → Source: GitHub Actions）；
+        # GITHUB_TOKEN 没有 administration 权限，无法由 action 自行开通。
 
       - name: Build
         run: pnpm build
