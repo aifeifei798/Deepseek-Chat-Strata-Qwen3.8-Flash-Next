@@ -59,6 +59,26 @@ const serverTools = (search: boolean): CreateMessageRequest['tools'] => {
 /** 允许自动补标题的请求；手动重命名后取消本轮标题写入，包含主动清空标题的情况。 */
 const titleRequests = new Set<AbortController>()
 
+/** 标题由本地从提问文本推导（服务端没有下发标题）的会话；服务端标题到达时覆盖，手动改名后移出。 */
+const derivedTitles = new Set<string>()
+
+/** 推导标题的最大长度，按 Unicode 码点计 */
+const TITLE_MAX_LENGTH = 24
+
+/** 从提问文本推导会话标题：第一行非空文本，去掉行首 Markdown 标记，压平空白后截断 */
+const deriveTitle = (text: string) => {
+  const line = text
+    .split('\n')
+    .map((part) => part.trim().replace(/^[#>*+-]+|^\d+[.)]\s+/, '').trim())
+    .find(Boolean)
+  if (!line) {
+    return ''
+  }
+  const flat = line.replace(/\s+/g, ' ')
+  const truncated = [...flat].slice(0, TITLE_MAX_LENGTH).join('')
+  return truncated === flat ? flat : `${truncated}…`
+}
+
 type ChatState = {
   ready: boolean
   initError: boolean
@@ -417,6 +437,7 @@ export const replaceHistory = async (write: () => Promise<void>): Promise<number
     sessionAccess.clear()
     unsavedSessions.clear()
     pendingFiles.clear()
+    derivedTitles.clear()
     clearAllDrafts()
     set({
       ready: true,
@@ -461,6 +482,8 @@ export const renameSession = (id: string, title: string) => {
   if (get().importingHistory || deletingSessions.has(id)) {
     return
   }
+  // 手动命名优先级最高：取消本轮服务端标题写入，也不再被推导名替换。
+  derivedTitles.delete(id)
   const controller = getStreamController(id)
   if (controller) {
     titleRequests.delete(controller)
@@ -509,6 +532,7 @@ const removeSessionData = async (id: string): Promise<boolean> => {
     sessionAccess.delete(id)
     unsavedSessions.delete(id)
     pendingFiles.delete(id)
+    derivedTitles.delete(id)
     clearDraft(id)
     set((state) => ({
       sessions: state.sessions.filter((session) => session.id !== id),
@@ -600,9 +624,15 @@ export const sendMessage = (targetSessionId: string | null) => {
     createdAt: now,
   }
   const reply = createReply()
+  // 无标题的会话在发出第一条提问时立即推导标题；服务端下发的标题（如官方 API）到达后仍会覆盖。
+  const derivedTitle = !current.title && text.trim() ? deriveTitle(text) : ''
+  if (derivedTitle) {
+    derivedTitles.add(sessionId)
+  }
   updateSession(sessionId, (session) => ({
     ...appendBranch(session, history.at(-1)?.id ?? null, [question, reply]),
     updatedAt: now,
+    ...(derivedTitle && !session.title ? { title: derivedTitle } : {}),
   }))
   if (files.length > 0) {
     pendingFiles.set(sessionId, [
@@ -963,7 +993,8 @@ const waitForRetry = (attempt: number, signal: AbortSignal) =>
  */
 const streamReply = async (sessionId: string, initial: AssistantMessage, request: Request) => {
   const controller = new AbortController()
-  if (!getSession(sessionId)?.title) {
+  // 没有标题或标题来自本地推导时都请求服务端标题；推导名先顶上，服务端语义标题到达后覆盖。
+  if (!getSession(sessionId)?.title || derivedTitles.has(sessionId)) {
     titleRequests.add(controller)
   }
   set((state) => ({ streaming: { ...state.streaming, [sessionId]: controller } }))
@@ -1026,7 +1057,13 @@ const streamReply = async (sessionId: string, initial: AssistantMessage, request
             !get().importingHistory
           ) {
             const title = event.delta.title.trim()
-            updateSession(sessionId, (session) => (session.title ? session : { ...session, title }))
+            // 推导名让位给服务端语义标题；用户手动的改名不受影响（改名时会取消本轮请求）。
+            updateSession(sessionId, (session) =>
+              !session.title || derivedTitles.has(sessionId)
+                ? { ...session, title }
+                : session
+            )
+            derivedTitles.delete(sessionId)
             titleRequests.delete(controller)
           }
           reply = applyEvent(reply, event, Date.now(), blockIndexes)
